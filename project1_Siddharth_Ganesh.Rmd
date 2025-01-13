@@ -1,0 +1,267 @@
+---
+title: "Title"
+author:
+- Siddharth Ganesh
+- srganesh
+date: "Due Wed, March 24, at 8:00PM (Pittburgh time)"
+output:
+  pdf_document:
+    toc: yes
+  word_document:
+    toc: yes
+  html_document:
+    code_folding: show
+    theme: cosmo
+    toc: yes
+    toc_float: yes
+optin: TRUE
+---
+
+```{r, include=FALSE}
+###########################
+# STYLE EDITS: IGNORE THIS
+###########################
+knitr::opts_chunk$set(message = FALSE) # include this if you don't want markdown to knit messages
+knitr::opts_chunk$set(warning = FALSE) # include this if you don't want markdown to knit warnings
+knitr::opts_chunk$set(echo = TRUE) # set echo=FALSE to hide code from html output
+```
+
+
+```{r}
+
+library("knitr")
+library("cmu202")
+library("kableExtra")
+library("pander")
+library("readr")
+library("magrittr")
+library("car")
+library("jtools")
+library("leaps")
+
+```
+```{r}
+nyc <- readr::read_csv("http://stat.cmu.edu/~gordonw/nyc.csv")
+
+```
+
+
+
+
+# Introduction
+
+
+New York City is one of the biggest and most expensive cities to live in. In this analysis we try to build a model to see if we can predict a persons income based on thier housing data: Age, Move in Year, and Maintance Deficiencies. 
+
+# Exploratory Data Analysis
+**DATA**
+Every 3 years a vacancy survey is done in New York City by the United States Census Bureau. We will be analyzing 4 variables from this data set. 
+
+Income: total household income (in $) [the response variable]
+Age: respondent’s age (in years)
+MaintenanceDef : number of maintenance deficiencies of the residence, between 2002 and 2005
+NYC Move: the year the respondent moved to New York City 
+
+**UNIVARIATE EXPLORATION**
+As a first step, we take a look at each variable individually and their distribution. As all our variables are numerical, we can use histograms.
+```{r}
+
+hist(nyc$Income,
+main = "Income frequencies",
+        xlab = "Income dollars",
+        ylab = "Frequency")
+
+```
+```{r} 
+summary(nyc$Income)
+```
+
+```{r} 
+hist(nyc$Age,
+main = "Age frequencies",
+        xlab = "Age (earth years)",
+        ylab = "Frequency")
+
+```
+```{r} 
+summary(nyc$Age)
+```
+
+```{r} 
+hist(nyc$MaintenanceDef,
+main = "Maintenance Deficiencies frequency",
+        xlab = "Maintenance Deficiencies (number)",
+        ylab = "Frequency")
+
+```
+```{r} 
+summary(nyc$MaintenanceDef)
+```
+
+```{r} 
+hist(nyc$NYCMove,
+main = "NYC Move in Year frequencies",
+        xlab = "NYC Move in Year",
+        ylab = "Frequency")
+
+```
+```{r} 
+summary(nyc$NYCMove)
+```
+Looking at the graphs and the summaries we can see that Income, MaintenanceDef, and NYCMove are skewed. Maintenance Deficiencies is heavily right skewed, and Income is right skewed as well (meaning there were more earners at the lower level around 20,000 and fewer around the max at around 100,000). Age is slightly right skewed but looks mostly normal (slightly more younger people than the mean of 50 years old). NYC Move is left skewed (meaning more people moved in recently in the data set). All these plots look unimodel execpt NYC Move may be considered slightly bimodel. To normalize this we try a few transformations including square root and log. Square root turned out to be the better transforamtion for all of these variables.
+```{r}
+nyc$sqrt.Income = sqrt(nyc$Income)
+hist(nyc$sqrt.Income,
+main = "Square Root Income frequencies",
+        xlab = "Square Root Income dollars",
+        ylab = "Frequency")
+
+```
+```{r} 
+summary(nyc$sqrt.Income)
+```
+
+```{r} 
+nyc$sqrt.MD <- sqrt(nyc$MaintenanceDef)
+hist(nyc$sqrt.MD,
+main = "Square Root Maintenance Deficiencies frequency",
+        xlab = "Square root Maintenance Deficiencies (number)",
+        ylab = "Frequency")
+
+```
+```{r} 
+summary(nyc$sqrt.MD)
+```
+```{r} 
+nyc$sqrt.year <- sqrt(nyc$NYCMove)
+hist(nyc$sqrt.year,
+main = "NYC Move in Year frequencies",
+        xlab = "NYC Move in Year",
+        ylab = "Frequency")
+
+```
+```{r} 
+summary(nyc$sqrt.year)
+```
+Now the plots look much more normal with the means and medians being closer together, but square root matainence deficiencies is still a bit right skewed and NYC Move is still a bit left skewed.
+
+
+**BIVARIATE EXPLORATION**
+Now that we have an understanding of the different variables and transformed them to be as normal as possible, we can take a look at our explantory variable's relationship to our response variable income. 
+
+```{r}
+plot(sqrt.Income ~ sqrt.year, data = nyc,
+     main = "Square Root Income vs. Square Root Move in Year",
+        xlab = "Square Root Move in Year",
+        ylab = "Square Root Income (dollars)")
+
+```
+
+```{r}
+plot(sqrt.Income ~ sqrt.MD, data = nyc,
+     main = "Square Root Income vs. Square Root Maintenance Deficiencies",
+        xlab = " Square Root Maintenance Deficiencies (number)",
+        ylab = "Square Root Income (dollars)")
+
+```
+
+```{r}
+plot(sqrt.Income ~ Age, data = nyc,
+     main = "Square Root Income vs. Age",
+        xlab = "Age (years)",
+        ylab = "Square Root Income (dollars)")
+
+```
+Based on the graphs we can see that generally see that Square Root Income vs. Square Root Move in Year is a very weak positive correlation. Square Root Income vs Square Root Mainatnence has no real discernable correlation, but at this point we will choose to keep this relationship in our model for the extra information it may provide.. Square Root Income vs. Age seems to have a very weak negative correlation.
+
+# Modeling
+
+Now that we have studied teh relationships between our explanatory and response variables, we can move on to building a linear regression model that will allow us to predict income based on Age, Maintenence Deficiencies, and Move in Year.
+
+Before we settle on a model we must check our variables are dangerously multicolinear. 
+
+```{r}
+nyc.filtered <- subset(nyc, select = -c(Income, MaintenanceDef,NYCMove))
+
+```
+
+```{r}
+pairs(nyc.filtered)
+```
+From the pairs graphs it doesn't look like there is any correlation between our explanatory variables so we can move on to creating a model, and double checking by computing our VIF values. Note that sqrt.year refers to NYC Move and sqrt.MD refers to Maintenece Deficiencies. 
+
+```{r}
+sqrt.Income.full.mod <- lm(sqrt.Income ~ 
+                     sqrt.year +sqrt.MD, 
+                  data = nyc)
+```
+```{r}
+summary(sqrt.Income.full.mod)
+```
+Surprisingly the most signficant model based on our response variables was one where Age was omitted. The p-value F-Test with all teh response variables included was .07 which is greater than .05, while the p-value without Age was .03653 <.05 (A significant model.) One potential pitfall of this model is that the R-squared value is very low. Meaning that fit isn't great. This is not suprising as we did not see strong relationships between our explanatory and response variables in our bivariate exploration.
+
+```{r}
+car::vif(sqrt.Income.full.mod)
+```
+Based on visually looking at the pairs graphs and then looking at our vif values it's clear that there is no dangerous multicoliniarity (all vif values are less than 2.5) and very little interaction between the terms.
+
+```{r}
+plot(sqrt.Income.full.mod, which=1)
+```
+The Residual vs. Fitted plot for this model is pretty good.The data points are relativly spread our above and under the 0 line across the x-values. It is concerning however that the line dips at either end suggesting some not noramlly distributed errors.
+
+```{r}
+plot(sqrt.Income.full.mod, which=2)
+```
+The QQ plot also looks okay so we can expect a fairly normally distributed dataset based on the model, however the points diverging at both ends indicates some skewness and outliers.
+
+# Prediction
+We are now tasked with predicting  the income  for  a  household  with  three  maintenance  deficiencies, whose respondent’s age is 53 and who moved to NYC in 1987.
+
+Our model suggests 
+(1230.754+(-22.892*sqrt(1987))+(-11.790*sqrt(3)))^2
+```{r}
+(1230.754+(-22.892*sqrt(1987))+(-11.790*sqrt(3)))^2
+```
+Our Model predicts that this person's income will be 36,063.68. We had to square root the input variables to match our model and square our output get our answer in the correct form.
+
+# Discussion
+In this analysis we learned that there isn't necessarily a very strong realtionship between some of the vacancy statistics and a persons income. A person may choose to leave or move into New York either beacuse they are poor or rich. Likewise there are poor and rich people of all ages it seems in New York city so that did not turn out to be a good predictor. Although real estate prices have gone up in the city, it seems not substantially enough to impact the relative income of those moving in. In the end we came up with a model that may be able to predict the income of someone based on their maintenence deficiencies and their move in year, but it is suseptible to being skewed and errors. In the future it will be interesting to see if other predictors such as square feet, or family size will be greater predictors.
+
+# Additional Useful Graphs
+
+```{r}
+plot(Income ~ Age, data = nyc,
+     main = "Income vs. Age",
+        xlab = "Age (years)",
+        ylab = "Income (dollars)")
+
+```
+```{r}
+plot(Income ~ MaintenanceDef, data = nyc,
+     main = "Income vs. Maintenance Deficiencies",
+        xlab = "Maintenance Deficiencies (number)",
+        ylab = "Income (dollars)")
+
+```
+```{r}
+plot(Income ~ sqrt.MD, data = nyc,
+     main = "Income vs. Square Root Maintenance Deficiencies",
+        xlab = " Square Root Maintenance Deficiencies (number)",
+        ylab = "Income (dollars)")
+
+```
+```{r}
+plot(Income ~ NYCMove, data = nyc,
+     main = "Income vs. Move in Year",
+        xlab = "Move in Year",
+        ylab = "Income (dollars)")
+
+```
+```{r}
+plot(Income ~ sqrt.year, data = nyc,
+     main = "Income vs. Square Root Move in Year",
+        xlab = "Square Root Move in Year",
+        ylab = "Income (dollars)")
+
+```
